@@ -85,9 +85,26 @@ describe("Dialog integration", () => {
       // If evaluate fails, try navigating anyway
     }
 
+    // Brief settle to let any lingering Puppeteer internal operations (e.g.
+    // ElementHandle cleanup from a previous page.click()) complete before
+    // navigation destroys the execution context.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     config.dialogAutoDismiss = "none";
     await page.goto(DIALOG_FIXTURE, { waitUntil: "load" });
     pageManager.clearPendingDialog();
+  }
+
+  /**
+   * Helper: poll until a pending dialog appears (up to timeoutMs).
+   * Replaces fixed `setTimeout(resolve, 100)` waits that are flaky under load.
+   */
+  async function waitForDialog(timeoutMs = 2000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (pageManager.getPendingDialogInfo()) return;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
   }
 
   /**
@@ -110,7 +127,7 @@ describe("Dialog integration", () => {
 
       // Click triggers alert — don't await as it blocks until dialog handled
       const clickPromise = page.click("#alert-btn");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitForDialog();
 
       // Dialog should be captured
       const dialogInfo = pageManager.getPendingDialogInfo();
@@ -134,7 +151,7 @@ describe("Dialog integration", () => {
       const page = pageManager.getActivePage();
 
       const clickPromise = page.click("#confirm-btn");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitForDialog();
 
       const dialogInfo = pageManager.getPendingDialogInfo();
       expect(dialogInfo).not.toBeNull();
@@ -154,7 +171,7 @@ describe("Dialog integration", () => {
       const page = pageManager.getActivePage();
 
       const clickPromise = page.click("#confirm-btn");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitForDialog();
 
       const rawDialog = pageManager.getPendingDialog()!;
       await rawDialog.dismiss();
@@ -169,7 +186,7 @@ describe("Dialog integration", () => {
       const page = pageManager.getActivePage();
 
       const clickPromise = page.click("#prompt-btn");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitForDialog();
 
       const dialogInfo = pageManager.getPendingDialogInfo();
       expect(dialogInfo).not.toBeNull();
@@ -189,7 +206,7 @@ describe("Dialog integration", () => {
       const page = pageManager.getActivePage();
 
       const clickPromise = page.click("#prompt-btn");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitForDialog();
 
       const dialogInfo = pageManager.getPendingDialogInfo();
       expect(dialogInfo).not.toBeNull();
@@ -205,7 +222,7 @@ describe("Dialog integration", () => {
       const page = pageManager.getActivePage();
 
       const clickPromise = page.click("#prompt-btn");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitForDialog();
 
       const rawDialog = pageManager.getPendingDialog()!;
       await rawDialog.dismiss();
@@ -226,7 +243,7 @@ describe("Dialog integration", () => {
       const page = pageManager.getActivePage();
 
       const clickPromise = page.click("#alert-btn");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitForDialog();
 
       // renderActivePage returns a stub with pending_dialog when dialog is blocking
       const representation = await renderActivePage(deps, { source: "action" });
@@ -265,7 +282,7 @@ describe("Dialog integration", () => {
 
       // Confirm should be queued
       const clickPromise = page.click("#confirm-btn");
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await waitForDialog();
       const dialogInfo = pageManager.getPendingDialogInfo();
       expect(dialogInfo).not.toBeNull();
       expect(dialogInfo!.type).toBe("confirm");
@@ -319,7 +336,7 @@ describe("Dialog integration", () => {
 
       // Attempt navigation — triggers beforeunload dialog
       const navPromise = page.goto("about:blank", { waitUntil: "load" });
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitForDialog();
 
       const dialogInfo = pageManager.getPendingDialogInfo();
       expect(dialogInfo).not.toBeNull();
@@ -346,7 +363,7 @@ describe("Dialog integration", () => {
       const navPromise = page.goto("about:blank", { waitUntil: "load" }).catch(() => {
         // Navigation was cancelled by beforeunload dismiss — expected
       });
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitForDialog();
 
       const dialogInfo = pageManager.getPendingDialogInfo();
       expect(dialogInfo).not.toBeNull();
@@ -421,7 +438,7 @@ describe("Dialog integration", () => {
 
       // Trigger confirm dialog
       const clickPromise = page.click("#confirm-btn");
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitForDialog();
 
       // Call charlotte:dialog through MCP
       const result = await mcpClient.callTool({
@@ -452,7 +469,7 @@ describe("Dialog integration", () => {
       const page = pageManager.getActivePage();
 
       const clickPromise = page.click("#confirm-btn");
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitForDialog();
 
       const result = await mcpClient.callTool({
         name: "charlotte:dialog",
@@ -473,7 +490,7 @@ describe("Dialog integration", () => {
       const page = pageManager.getActivePage();
 
       const clickPromise = page.click("#prompt-btn");
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitForDialog();
 
       const result = await mcpClient.callTool({
         name: "charlotte:dialog",
@@ -629,7 +646,7 @@ describe("Dialog integration", () => {
 
       // Click triggers: confirm('First question?') then confirm('Second question?')
       const clickPromise = page.click("#double-confirm");
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitForDialog();
 
       // First dialog should be captured
       const firstDialogInfo = pageManager.getPendingDialogInfo();
@@ -643,7 +660,7 @@ describe("Dialog integration", () => {
       pageManager.clearPendingDialog();
 
       // Wait for the second dialog to appear (JS continues synchronously after first is handled)
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitForDialog();
 
       // Second dialog should now be captured
       const secondDialogInfo = pageManager.getPendingDialogInfo();
@@ -666,14 +683,14 @@ describe("Dialog integration", () => {
       const page = pageManager.getActivePage();
 
       const clickPromise = page.click("#double-confirm");
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitForDialog();
 
       // Dismiss the first dialog
       const firstDialog = pageManager.getPendingDialog()!;
       await firstDialog.dismiss();
       pageManager.clearPendingDialog();
 
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitForDialog();
 
       // Accept the second dialog
       const secondDialog = pageManager.getPendingDialog()!;
@@ -691,7 +708,7 @@ describe("Dialog integration", () => {
 
       // Trigger double confirm — two synchronous dialogs
       const clickPromise = page.click("#double-confirm");
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitForDialog();
 
       // First dialog present
       expect(pageManager.getPendingDialogInfo()!.message).toBe("First question?");
@@ -701,7 +718,7 @@ describe("Dialog integration", () => {
       pageManager.clearPendingDialog();
 
       // After clearing first, second should arrive
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitForDialog();
       const secondInfo = pageManager.getPendingDialogInfo();
       expect(secondInfo).not.toBeNull();
       expect(secondInfo!.message).toBe("Second question?");
@@ -716,12 +733,12 @@ describe("Dialog integration", () => {
       const page = pageManager.getActivePage();
 
       const clickPromise = page.click("#double-confirm");
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitForDialog();
 
       // Handle first
       await pageManager.getPendingDialog()!.accept();
       pageManager.clearPendingDialog();
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await waitForDialog();
 
       // Handle second
       await pageManager.getPendingDialog()!.accept();

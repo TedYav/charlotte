@@ -14,6 +14,9 @@ import { renderActivePage, resolveElement } from "../../src/tools/tool-helpers.j
 
 const MODIFIER_CLICK_FIXTURE = `file://${path.resolve(import.meta.dirname, "../fixtures/pages/modifier-click.html")}`;
 
+// On macOS, Ctrl+click is interpreted as a right-click (contextmenu) by Chromium
+const IS_MACOS = os.platform() === "darwin";
+
 describe("Modifier click integration", () => {
   let browserManager: BrowserManager;
   let pageManager: PageManager;
@@ -149,7 +152,8 @@ describe("Modifier click integration", () => {
       await clickWithModifiers(backendNodeId, "left", ["ctrl"]);
 
       const resultText = await getResultText();
-      expect(resultText).toBe("clicked:ctrl");
+      // On macOS, Ctrl+click is interpreted as right-click (contextmenu) by Chromium
+      expect(resultText).toBe(IS_MACOS ? "rightclicked:ctrl" : "clicked:ctrl");
     });
 
     it("shift+click sets shiftKey on the event", async () => {
@@ -204,7 +208,8 @@ describe("Modifier click integration", () => {
       await clickWithModifiers(backendNodeId, "left", ["ctrl", "shift"]);
 
       const resultText = await getResultText();
-      expect(resultText).toBe("clicked:ctrl+shift");
+      // On macOS, Ctrl+click is interpreted as right-click (contextmenu) by Chromium
+      expect(resultText).toBe(IS_MACOS ? "rightclicked:ctrl+shift" : "clicked:ctrl+shift");
     });
 
     it("alt+shift+click sets both modifier keys", async () => {

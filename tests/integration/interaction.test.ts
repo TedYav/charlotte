@@ -272,11 +272,11 @@ describe("Interaction integration", () => {
       const page = pageManager.getActivePage();
       const { backendNodeId } = await resolveElement(deps, textInput!.id);
 
-      // Focus, select all, delete, then type
+      // Focus, select all via DOM select(), delete, then type
       await focusByBackendNodeId(backendNodeId);
-      await page.keyboard.down("Control");
-      await page.keyboard.press("a");
-      await page.keyboard.up("Control");
+      await page.evaluate(() => {
+        (document.getElementById("text-input") as HTMLInputElement)?.select();
+      });
       await page.keyboard.press("Backspace");
       await page.keyboard.type("Replaced text");
 

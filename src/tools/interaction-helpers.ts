@@ -280,10 +280,19 @@ export async function typeIntoElement(
   await focusElementByBackendNodeId(page, backendNodeId);
 
   if (clearFirst) {
-    // Select all text then delete — works cross-platform
-    await page.keyboard.down("Control");
-    await page.keyboard.press("a");
-    await page.keyboard.up("Control");
+    // Use the DOM select() method via CDP — reliable cross-platform unlike Ctrl/Meta+A
+    const cdpSession = await page.createCDPSession();
+    try {
+      const { object } = await cdpSession.send("DOM.resolveNode", { backendNodeId });
+      if (object?.objectId) {
+        await cdpSession.send("Runtime.callFunctionOn", {
+          objectId: object.objectId,
+          functionDeclaration: `function() { if (typeof this.select === 'function') this.select(); }`,
+        });
+      }
+    } finally {
+      await cdpSession.detach();
+    }
     await page.keyboard.press("Backspace");
   }
 
