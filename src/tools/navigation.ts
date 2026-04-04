@@ -5,7 +5,7 @@ import { logger } from "../utils/logger.js";
 import type { DetailLevel } from "../renderer/renderer-pipeline.js";
 import type { RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ToolDependencies } from "./tool-helpers.js";
-import { ensureReady, renderActivePage, formatPageResponse, handleToolError } from "./tool-helpers.js";
+import { ensureReady, renderActivePage, formatPageResponse, handleToolError, waitForCompositorFrame } from "./tool-helpers.js";
 
 const detailSchema = z
   .enum(["minimal", "summary", "full"])
@@ -81,6 +81,10 @@ export function registerNavigationTools(
           );
         }
 
+        // Sync the compositor after navigation so SPA route transitions
+        // have a fresh frame before we read the page state.
+        await waitForCompositorFrame(page);
+
         const detailLevel: DetailLevel = detail ?? "minimal";
         const representation = await renderActivePage(deps, {
           detail: detailLevel,
@@ -121,6 +125,8 @@ export function registerNavigationTools(
           );
         }
 
+        await waitForCompositorFrame(page);
+
         const detailLevel: DetailLevel = detail ?? "minimal";
         const representation = await renderActivePage(deps, {
           detail: detailLevel,
@@ -160,6 +166,8 @@ export function registerNavigationTools(
             "No forward page in history.",
           );
         }
+
+        await waitForCompositorFrame(page);
 
         const detailLevel: DetailLevel = detail ?? "minimal";
         const representation = await renderActivePage(deps, {
@@ -202,6 +210,8 @@ export function registerNavigationTools(
         } else {
           await page.reload({ waitUntil: "load" });
         }
+
+        await waitForCompositorFrame(page);
 
         const detailLevel: DetailLevel = detail ?? "minimal";
         const representation = await renderActivePage(deps, {

@@ -237,6 +237,9 @@ export async function getSessionForElement(
  * state, and computes a structural diff between them.
  */
 export async function renderAfterAction(deps: ToolDependencies): Promise<PageRepresentation> {
+  const page = deps.pageManager.getActivePage();
+  await waitForCompositorFrame(page);
+
   const preActionSnapshot = deps.snapshotStore.getLatest();
 
   const representation = await renderActivePage(deps, { source: "action" });
@@ -456,6 +459,10 @@ export async function resolveOutputPath(
  *   1st rAF: browser processes pending style/layout changes
  *   2nd rAF: compositor produces a new frame with those changes
  *
+ * After the rAF resolves, a synchronous layout flush (reading offsetHeight)
+ * forces the browser to complete any pending layout work, pushing changes
+ * closer to the compositor surface.
+ *
  * Fails silently if the page has no JS execution context (e.g. crashed tab,
  * about:blank, PDF) — in that case the screenshot proceeds without the flush,
  * which is the pre-fix behavior.
@@ -463,13 +470,14 @@ export async function resolveOutputPath(
 export async function waitForCompositorFrame(page: Page): Promise<void> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
+    let rafResolved = false;
     const rafFlush = page.evaluate(() => {
       return new Promise<void>((resolve) => {
         requestAnimationFrame(() => {
           requestAnimationFrame(() => resolve());
         });
       });
-    });
+    }).then(() => { rafResolved = true; });
     // Prevent unhandled rejection if the page navigates or the timeout wins the race.
     rafFlush.catch(() => {});
 
@@ -478,10 +486,23 @@ export async function waitForCompositorFrame(page: Page): Promise<void> {
     });
 
     await Promise.race([rafFlush, timeout]);
+
+    if (!rafResolved) {
+      logger.warn("waitForCompositorFrame: rAF flush timed out after 1s, proceeding with possibly stale frame");
+    }
   } catch {
     // No JS context available — proceed without compositor flush.
   } finally {
     clearTimeout(timeoutId);
+  }
+
+  // Force a synchronous layout flush to ensure pending DOM changes are
+  // fully processed. This reads offsetHeight which triggers layout
+  // computation, pushing changes toward the compositor surface.
+  try {
+    await page.evaluate(() => { void document.body.offsetHeight; });
+  } catch {
+    // Silent — same degradation as above.
   }
 }
 

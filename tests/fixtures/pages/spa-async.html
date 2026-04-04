@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Async SPA Test Page</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: sans-serif; }
+
+    /* Loading spinner — visually minimal, small file size when screenshotted */
+    .loading {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background: #fafafa;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #e0e0e0;
+      border-top-color: #333;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Rendered content — visually rich, large file size when screenshotted */
+    .app { display: none; }
+    .app.visible { display: block; }
+    header { height: 60px; background: #2563eb; color: white; display: flex; align-items: center; padding: 0 24px; }
+    nav { display: flex; gap: 16px; margin-left: 24px; }
+    nav a { color: white; text-decoration: none; padding: 6px 12px; border-radius: 4px; }
+    nav a:hover { background: rgba(255,255,255,0.2); }
+    .sidebar { width: 240px; background: #f1f5f9; position: fixed; top: 60px; bottom: 0; padding: 16px; }
+    .sidebar ul { list-style: none; }
+    .sidebar li { padding: 8px 12px; margin: 4px 0; border-radius: 4px; cursor: pointer; }
+    .sidebar li:hover { background: #e2e8f0; }
+    .main-content { margin-left: 260px; padding: 24px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+    th { background: #f8fafc; font-weight: 600; color: #475569; }
+    tr:hover { background: #f8fafc; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+    .badge-active { background: #dcfce7; color: #166534; }
+    .badge-pending { background: #fef3c7; color: #92400e; }
+    .badge-inactive { background: #fee2e2; color: #991b1b; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; }
+    .stat-value { font-size: 24px; font-weight: 700; color: #1e293b; }
+    .stat-label { font-size: 14px; color: #64748b; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <!-- Phase 1: Loading spinner (shown on initial render) -->
+  <div id="loading" class="loading" role="status" aria-label="Loading">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- Phase 2: Full application (hidden until async render completes) -->
+  <div id="app" class="app" role="application" aria-label="Patient management">
+    <header role="banner">
+      <h1>PatientHub</h1>
+      <nav role="navigation" aria-label="Main navigation">
+        <a href="#dashboard">Dashboard</a>
+        <a href="#patients">Patients</a>
+        <a href="#appointments">Appointments</a>
+        <a href="#reports">Reports</a>
+      </nav>
+    </header>
+
+    <aside class="sidebar" role="complementary" aria-label="Sidebar navigation">
+      <ul>
+        <li>All Patients</li>
+        <li>Active</li>
+        <li>Pending Review</li>
+        <li>Archived</li>
+        <li>Recently Added</li>
+      </ul>
+    </aside>
+
+    <main class="main-content" role="main" aria-label="Patient list">
+      <h2>Patients</h2>
+
+      <div class="stats">
+        <div class="stat-card"><div class="stat-value">247</div><div class="stat-label">Total Patients</div></div>
+        <div class="stat-card"><div class="stat-value">189</div><div class="stat-label">Active</div></div>
+        <div class="stat-card"><div class="stat-value">34</div><div class="stat-label">Pending</div></div>
+        <div class="stat-card"><div class="stat-value">24</div><div class="stat-label">Inactive</div></div>
+      </div>
+
+      <table role="table" aria-label="Patient records">
+        <thead>
+          <tr><th>Name</th><th>ID</th><th>Status</th><th>Last Visit</th><th>Provider</th></tr>
+        </thead>
+        <tbody id="patient-table">
+        </tbody>
+      </table>
+
+      <button id="load-more">Load More</button>
+    </main>
+  </div>
+
+  <script>
+    // Simulate an async SPA framework render:
+    // 1. Page loads with a spinner (initial HTML)
+    // 2. After async work (microtask + rAF to match React's scheduler), content replaces spinner
+
+    var patients = [
+      { name: "Sarah Johnson", id: "P-1001", status: "active", visit: "2026-03-28", provider: "Dr. Smith" },
+      { name: "Michael Chen", id: "P-1002", status: "active", visit: "2026-03-27", provider: "Dr. Garcia" },
+      { name: "Emily Rodriguez", id: "P-1003", status: "pending", visit: "2026-03-25", provider: "Dr. Patel" },
+      { name: "James Wilson", id: "P-1004", status: "active", visit: "2026-03-24", provider: "Dr. Smith" },
+      { name: "Lisa Anderson", id: "P-1005", status: "inactive", visit: "2026-03-20", provider: "Dr. Kim" },
+      { name: "Robert Taylor", id: "P-1006", status: "active", visit: "2026-03-22", provider: "Dr. Garcia" },
+      { name: "Maria Martinez", id: "P-1007", status: "active", visit: "2026-03-21", provider: "Dr. Patel" },
+      { name: "David Brown", id: "P-1008", status: "pending", visit: "2026-03-19", provider: "Dr. Kim" },
+      { name: "Jennifer Davis", id: "P-1009", status: "active", visit: "2026-03-18", provider: "Dr. Smith" },
+      { name: "Christopher Lee", id: "P-1010", status: "active", visit: "2026-03-17", provider: "Dr. Garcia" },
+      { name: "Amanda White", id: "P-1011", status: "pending", visit: "2026-03-16", provider: "Dr. Patel" },
+      { name: "Daniel Harris", id: "P-1012", status: "active", visit: "2026-03-15", provider: "Dr. Kim" },
+    ];
+
+    function renderApp() {
+      var tbody = document.getElementById("patient-table");
+      var html = "";
+      for (var i = 0; i < patients.length; i++) {
+        var p = patients[i];
+        var badgeClass = "badge badge-" + p.status;
+        html += "<tr>" +
+          "<td>" + p.name + "</td>" +
+          "<td>" + p.id + "</td>" +
+          "<td><span class='" + badgeClass + "'>" + p.status + "</span></td>" +
+          "<td>" + p.visit + "</td>" +
+          "<td>" + p.provider + "</td>" +
+          "</tr>";
+      }
+      tbody.innerHTML = html;
+
+      // Hide spinner, show app
+      document.getElementById("loading").style.display = "none";
+      document.getElementById("app").className = "app visible";
+      document.title = "PatientHub - Patients";
+    }
+
+    // Simulate React's async rendering pattern:
+    // Promise.resolve() creates a microtask (like React's setState batching),
+    // then requestAnimationFrame schedules the DOM mutation at the next frame
+    // (like React's commit phase).
+    Promise.resolve().then(function() {
+      requestAnimationFrame(function() {
+        renderApp();
+      });
+    });
+  </script>
+</body>
+</html>
