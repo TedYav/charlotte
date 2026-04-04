@@ -7,6 +7,7 @@ import { logger } from "../utils/logger.js";
 import type { RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ToolDependencies } from "./tool-helpers.js";
 import {
+  ensureReady,
   renderActivePage,
   renderAfterAction,
   resolveElement,
@@ -37,9 +38,9 @@ export function registerInteractionTools(
 ): Record<string, RegisteredTool> {
   const tools: Record<string, RegisteredTool> = {};
 
-  // ─── charlotte:click ───
-  tools["charlotte:click"] = server.registerTool(
-    "charlotte:click",
+  // ─── charlotte_click ───
+  tools["charlotte_click"] = server.registerTool(
+    "charlotte_click",
     {
       description:
         "Click an interactive element on the page. Returns full page representation after the click.",
@@ -59,7 +60,7 @@ export function registerInteractionTools(
     },
     async ({ element_id, click_type, modifiers }) => {
       try {
-        await deps.browserManager.ensureConnected();
+        await ensureReady(deps);
         const { page, backendNodeId } = await resolveElement(deps, element_id);
         const clickVariant = click_type ?? "left";
         const activeModifiers = modifiers ?? [];
@@ -82,9 +83,9 @@ export function registerInteractionTools(
     },
   );
 
-  // ─── charlotte:click_at ───
-  tools["charlotte:click_at"] = server.registerTool(
-    "charlotte:click_at",
+  // ─── charlotte_click_at ───
+  tools["charlotte_click_at"] = server.registerTool(
+    "charlotte_click_at",
     {
       description:
         "Click at specific page coordinates. Use when target elements are not in the accessibility tree (custom widgets, canvas, non-semantic interactive divs). Dispatches real CDP-level mouse events. Returns full page representation after the click.",
@@ -105,7 +106,7 @@ export function registerInteractionTools(
     },
     async ({ x, y, click_type, modifiers }) => {
       try {
-        await deps.browserManager.ensureConnected();
+        await ensureReady(deps);
         const page = deps.pageManager.getActivePage();
         const clickVariant = click_type ?? "left";
         const activeModifiers = modifiers ?? [];
@@ -155,9 +156,9 @@ export function registerInteractionTools(
     },
   );
 
-  // ─── charlotte:type ───
-  tools["charlotte:type"] = server.registerTool(
-    "charlotte:type",
+  // ─── charlotte_type ───
+  tools["charlotte_type"] = server.registerTool(
+    "charlotte_type",
     {
       description:
         "Type text into an input element. Returns full page representation after typing.",
@@ -170,23 +171,44 @@ export function registerInteractionTools(
         press_enter: coercedBoolean
           .optional()
           .describe("Press Enter after typing (default: false)"),
+        slowly: coercedBoolean
+          .optional()
+          .describe(
+            "Type one character at a time with a delay between keystrokes. Use for sites with autocomplete, search-as-you-type, or per-key validation (default: false)",
+          ),
+        character_delay: z
+          .number()
+          .min(1)
+          .optional()
+          .describe(
+            "Milliseconds between keystrokes (implies slowly: true). Default when slowly is true: 50ms",
+          ),
       },
     },
-    async ({ element_id, text, clear_first, press_enter }) => {
+    async ({ element_id, text, clear_first, press_enter, slowly, character_delay }) => {
       try {
-        await deps.browserManager.ensureConnected();
+        await ensureReady(deps);
         const { page, backendNodeId } = await resolveElement(deps, element_id);
         const shouldClearFirst = clear_first ?? true;
         const shouldPressEnter = press_enter ?? false;
+        const delayMs = character_delay ?? (slowly ? 50 : undefined);
 
         logger.info("Typing into element", {
           element_id,
           textLength: text.length,
           clearFirst: shouldClearFirst,
           pressEnter: shouldPressEnter,
+          characterDelay: delayMs,
         });
 
-        await typeIntoElement(page, backendNodeId, text, shouldClearFirst, shouldPressEnter);
+        await typeIntoElement(
+          page,
+          backendNodeId,
+          text,
+          shouldClearFirst,
+          shouldPressEnter,
+          delayMs,
+        );
 
         const representation = await renderAfterAction(deps);
         return formatPageResponse(representation);
@@ -196,9 +218,9 @@ export function registerInteractionTools(
     },
   );
 
-  // ─── charlotte:select ───
-  tools["charlotte:select"] = server.registerTool(
-    "charlotte:select",
+  // ─── charlotte_select ───
+  tools["charlotte_select"] = server.registerTool(
+    "charlotte_select",
     {
       description:
         "Select an option in a select/dropdown element. Returns full page representation after selection.",
@@ -209,7 +231,7 @@ export function registerInteractionTools(
     },
     async ({ element_id, value }) => {
       try {
-        await deps.browserManager.ensureConnected();
+        await ensureReady(deps);
         const { page, backendNodeId } = await resolveElement(deps, element_id);
 
         logger.info("Selecting option", { element_id, value });
@@ -224,9 +246,9 @@ export function registerInteractionTools(
     },
   );
 
-  // ─── charlotte:toggle ───
-  tools["charlotte:toggle"] = server.registerTool(
-    "charlotte:toggle",
+  // ─── charlotte_toggle ───
+  tools["charlotte_toggle"] = server.registerTool(
+    "charlotte_toggle",
     {
       description:
         "Toggle a checkbox or switch element. Returns full page representation after toggle.",
@@ -236,7 +258,7 @@ export function registerInteractionTools(
     },
     async ({ element_id }) => {
       try {
-        await deps.browserManager.ensureConnected();
+        await ensureReady(deps);
         const { page, backendNodeId } = await resolveElement(deps, element_id);
 
         logger.info("Toggling element", { element_id });
@@ -254,9 +276,9 @@ export function registerInteractionTools(
     },
   );
 
-  // ─── charlotte:submit ───
-  tools["charlotte:submit"] = server.registerTool(
-    "charlotte:submit",
+  // ─── charlotte_submit ───
+  tools["charlotte_submit"] = server.registerTool(
+    "charlotte_submit",
     {
       description:
         "Submit a form. Can submit by form ID or by clicking its submit button. Returns full page representation after submission.",
@@ -266,7 +288,7 @@ export function registerInteractionTools(
     },
     async ({ form_id }) => {
       try {
-        await deps.browserManager.ensureConnected();
+        await ensureReady(deps);
 
         // Find the form in the current representation
         const representation = await renderActivePage(deps, { detail: "minimal" });
@@ -276,7 +298,7 @@ export function registerInteractionTools(
           throw new CharlotteError(
             CharlotteErrorCode.ELEMENT_NOT_FOUND,
             `Form '${form_id}' not found on page.`,
-            "Call charlotte:observe to get current page state and verify form IDs.",
+            "Call charlotte_observe to get current page state and verify form IDs.",
           );
         }
 
@@ -315,9 +337,9 @@ export function registerInteractionTools(
     },
   );
 
-  // ─── charlotte:scroll ───
-  tools["charlotte:scroll"] = server.registerTool(
-    "charlotte:scroll",
+  // ─── charlotte_scroll ───
+  tools["charlotte_scroll"] = server.registerTool(
+    "charlotte_scroll",
     {
       description:
         "Scroll the page or a specific container. Returns full page representation after scrolling.",
@@ -332,7 +354,7 @@ export function registerInteractionTools(
     },
     async ({ direction, amount, element_id }) => {
       try {
-        await deps.browserManager.ensureConnected();
+        await ensureReady(deps);
         const page = deps.pageManager.getActivePage();
 
         const scrollAmount = amount ?? "page";
@@ -340,8 +362,9 @@ export function registerInteractionTools(
 
         // Calculate pixel distance
         const viewport = page.viewport();
-        const viewportWidth = viewport?.width ?? 1280;
-        const viewportHeight = viewport?.height ?? 720;
+        const { defaultViewport } = deps.config;
+        const viewportWidth = viewport?.width ?? defaultViewport.width;
+        const viewportHeight = viewport?.height ?? defaultViewport.height;
 
         let pixelDistance: number;
         if (scrollAmount === "page") {
@@ -419,9 +442,9 @@ export function registerInteractionTools(
     },
   );
 
-  // ─── charlotte:hover ───
-  tools["charlotte:hover"] = server.registerTool(
-    "charlotte:hover",
+  // ─── charlotte_hover ───
+  tools["charlotte_hover"] = server.registerTool(
+    "charlotte_hover",
     {
       description:
         "Hover over an element to trigger hover states. Returns full page representation after hover.",
@@ -431,7 +454,7 @@ export function registerInteractionTools(
     },
     async ({ element_id }) => {
       try {
-        await deps.browserManager.ensureConnected();
+        await ensureReady(deps);
         const { page, backendNodeId } = await resolveElement(deps, element_id);
 
         logger.info("Hovering element", { element_id });
@@ -446,9 +469,9 @@ export function registerInteractionTools(
     },
   );
 
-  // ─── charlotte:drag ───
-  tools["charlotte:drag"] = server.registerTool(
-    "charlotte:drag",
+  // ─── charlotte_drag ───
+  tools["charlotte_drag"] = server.registerTool(
+    "charlotte_drag",
     {
       description:
         "Drag an element to another element. Uses mouse primitives to simulate drag-and-drop. Returns full page representation after the drag.",
@@ -459,7 +482,7 @@ export function registerInteractionTools(
     },
     async ({ source_id, target_id }) => {
       try {
-        await deps.browserManager.ensureConnected();
+        await ensureReady(deps);
         const { page, backendNodeId: sourceNodeId } = await resolveElement(deps, source_id);
         const { backendNodeId: targetNodeId } = await resolveElement(deps, target_id);
 
@@ -478,9 +501,9 @@ export function registerInteractionTools(
     },
   );
 
-  // ─── charlotte:key ───
-  tools["charlotte:key"] = server.registerTool(
-    "charlotte:key",
+  // ─── charlotte_key ───
+  tools["charlotte_key"] = server.registerTool(
+    "charlotte_key",
     {
       description:
         "Send keyboard input to the page or a specific element. Supports single key with modifiers, or a sequence of keys. Use for keyboard-driven UIs (games, terminals, code editors) and non-input elements with keydown listeners.",
@@ -520,7 +543,7 @@ export function registerInteractionTools(
     },
     async ({ key, keys, modifiers, element_id, delay }) => {
       try {
-        await deps.browserManager.ensureConnected();
+        await ensureReady(deps);
         const page = deps.pageManager.getActivePage();
 
         // Validate: exactly one of key or keys must be provided
@@ -582,9 +605,9 @@ export function registerInteractionTools(
     },
   );
 
-  // ─── charlotte:upload ───
-  tools["charlotte:upload"] = server.registerTool(
-    "charlotte:upload",
+  // ─── charlotte_upload ───
+  tools["charlotte_upload"] = server.registerTool(
+    "charlotte_upload",
     {
       description:
         "Set files on a file input element. Validates that files exist and that the target is a file input. Returns full page representation after upload.",
@@ -595,7 +618,7 @@ export function registerInteractionTools(
     },
     async ({ element_id, paths }) => {
       try {
-        await deps.browserManager.ensureConnected();
+        await ensureReady(deps);
         const { page, backendNodeId } = await resolveElement(deps, element_id);
 
         // Validate all files exist before sending to CDP
@@ -623,7 +646,110 @@ export function registerInteractionTools(
     },
   );
 
-  // ─── charlotte:wait_for (delegated to wait-for.ts) ───
+  // ─── charlotte_fill_form ───
+
+  const FILLABLE_TYPES = new Set([
+    "text_input", "textarea", "select", "checkbox", "radio", "toggle", "date_input", "color_input",
+  ]);
+
+  tools["charlotte_fill_form"] = server.registerTool(
+    "charlotte_fill_form",
+    {
+      description:
+        "Fill multiple form fields in a single call. Auto-detects element types (text input, select, checkbox, etc.) and applies the appropriate action. Returns a single page representation with delta covering all changes. Validates all fields before mutating any — if one field is invalid, no fields are changed.",
+      inputSchema: {
+        fields: z
+          .array(
+            z.object({
+              element_id: z.string().describe("Element ID of the form field"),
+              value: z.string().describe("Value to set: text for inputs/textareas, option value or text for selects. For checkbox/radio/toggle the element is clicked (toggling its state) and value is ignored."),
+            }),
+          )
+          .min(1)
+          .describe("Array of {element_id, value} pairs to fill"),
+      },
+    },
+    async ({ fields }) => {
+      try {
+        await ensureReady(deps);
+
+        // Render to get element types from the interactive array
+        const representation = await renderActivePage(deps, { detail: "minimal" });
+
+        // Validate all fields up front before performing any actions
+        const resolvedFields: Array<{
+          backendNodeId: number;
+          type: string;
+          value: string;
+          page: import("puppeteer").Page;
+        }> = [];
+
+        for (const field of fields) {
+          // Check type before resolving — gives better errors for non-fillable elements
+          const element = representation.interactive.find((el) => el.id === field.element_id);
+          if (!element) {
+            // Fall through to resolveElement for proper "not found" with suggestions
+            await resolveElement(deps, field.element_id);
+            // If resolveElement didn't throw, the element exists but isn't interactive
+            throw new CharlotteError(
+              CharlotteErrorCode.ELEMENT_NOT_FOUND,
+              `Element '${field.element_id}' is not an interactive form field.`,
+              "Call charlotte_find to locate form fields by role or text.",
+            );
+          }
+
+          if (!FILLABLE_TYPES.has(element.type)) {
+            const hint = element.type === "file_input"
+              ? "Use charlotte_upload for file inputs."
+              : "fill_form supports: text_input, textarea, select, checkbox, radio, toggle, date_input, color_input.";
+            throw new CharlotteError(
+              CharlotteErrorCode.ELEMENT_NOT_INTERACTIVE,
+              `Element '${field.element_id}' is type '${element.type}' which cannot be filled.`,
+              hint,
+            );
+          }
+
+          const resolved = await resolveElement(deps, field.element_id);
+          resolvedFields.push({
+            backendNodeId: resolved.backendNodeId,
+            type: element.type,
+            value: field.value,
+            page: resolved.page,
+          });
+        }
+
+        logger.info("Filling form fields", { fieldCount: resolvedFields.length });
+
+        // Fill each field using the appropriate action
+        for (const field of resolvedFields) {
+          switch (field.type) {
+            case "text_input":
+            case "textarea":
+            case "date_input":
+            case "color_input":
+              await typeIntoElement(field.page, field.backendNodeId, field.value, true, false);
+              break;
+            case "select":
+              await selectOptionByBackendNodeId(field.page, field.backendNodeId, field.value);
+              break;
+            case "checkbox":
+            case "radio":
+            case "toggle":
+              await clickElementByBackendNodeId(field.page, field.backendNodeId, "left");
+              break;
+          }
+        }
+
+        // Single render after all fields are filled
+        const result = await renderAfterAction(deps);
+        return formatPageResponse(result);
+      } catch (error: unknown) {
+        return handleToolError(error);
+      }
+    },
+  );
+
+  // ─── charlotte_wait_for (delegated to wait-for.ts) ───
   const waitForTools = registerWaitForTools(server, deps);
   Object.assign(tools, waitForTools);
 

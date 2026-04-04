@@ -14,12 +14,14 @@ import {
   renderActivePage,
   resolveElement,
   formatElementsResponse,
+  waitForCompositorFrame,
 } from "../../src/tools/tool-helpers.js";
 import type { InteractiveElement, Bounds } from "../../src/types/page-representation.js";
 
 const SIMPLE_FIXTURE = `file://${path.resolve(import.meta.dirname, "../fixtures/pages/simple.html")}`;
 const FORM_FIXTURE = `file://${path.resolve(import.meta.dirname, "../fixtures/pages/form.html")}`;
 const DYNAMIC_FIXTURE = `file://${path.resolve(import.meta.dirname, "../fixtures/pages/dynamic.html")}`;
+const SPA_ASYNC_FIXTURE = `file://${path.resolve(import.meta.dirname, "../fixtures/pages/spa-async.html")}`;
 
 describe("Observation integration", () => {
   let browserManager: BrowserManager;
@@ -259,6 +261,111 @@ describe("Observation integration", () => {
 
       expect(typeof screenshotBuffer).toBe("string");
       expect((screenshotBuffer as string).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("waitForCompositorFrame", () => {
+    it("completes without error on a normal page", async () => {
+      const page = pageManager.getActivePage();
+      await page.goto(SIMPLE_FIXTURE, { waitUntil: "load" });
+
+      // Should resolve without throwing
+      await expect(waitForCompositorFrame(page)).resolves.toBeUndefined();
+    });
+
+    it("does not break screenshot capture on a static page", async () => {
+      const page = pageManager.getActivePage();
+      await page.goto(SIMPLE_FIXTURE, { waitUntil: "load" });
+
+      await waitForCompositorFrame(page);
+
+      const screenshotBase64 = (await page.screenshot({
+        type: "png",
+        encoding: "base64",
+        fullPage: true,
+      })) as string;
+
+      expect(typeof screenshotBase64).toBe("string");
+      expect(screenshotBase64.length).toBeGreaterThan(0);
+    });
+
+    it("does not break screenshot after JS-driven DOM mutation", async () => {
+      const page = pageManager.getActivePage();
+      await page.goto(DYNAMIC_FIXTURE, { waitUntil: "load" });
+
+      // Mutate the DOM
+      await page.evaluate(() => {
+        (document.getElementById("add-item-btn") as HTMLElement).click();
+      });
+
+      await waitForCompositorFrame(page);
+
+      const screenshotBase64 = (await page.screenshot({
+        type: "png",
+        encoding: "base64",
+        fullPage: true,
+      })) as string;
+
+      expect(screenshotBase64.length).toBeGreaterThan(0);
+
+      // Verify the DOM reflects the mutation (not stale)
+      const content = await page.evaluate(() => document.getElementById("status")?.textContent);
+      expect(content).toContain("Added item");
+    });
+
+    it("fails silently on about:blank (no JS context issue)", async () => {
+      const page = pageManager.getActivePage();
+      await page.goto("about:blank");
+
+      // Should not throw — degrades gracefully
+      await expect(waitForCompositorFrame(page)).resolves.toBeUndefined();
+    });
+
+    it("captures rendered content after async SPA route transition, not stale spinner", async () => {
+      const page = pageManager.getActivePage();
+      await page.goto(SPA_ASYNC_FIXTURE, { waitUntil: "load" });
+
+      // Wait for the async render to complete (simulates the time between
+      // navigate returning and the agent calling screenshot)
+      await page.waitForSelector("#app.visible", { timeout: 5000 });
+
+      // Verify the DOM has rendered (like charlotte_observe would confirm)
+      const title = await page.evaluate(() => document.title);
+      expect(title).toBe("PatientHub - Patients");
+
+      // Now take screenshot — this is where the regression manifests:
+      // the compositor surface may still hold the spinner frame
+      await waitForCompositorFrame(page);
+
+      const screenshotBase64 = (await page.screenshot({
+        type: "png",
+        encoding: "base64",
+        fullPage: true,
+      })) as string;
+
+      // Decode the screenshot in-page and sample a pixel from the header region
+      // (100, 30). The rendered app has a blue header (#2563eb = rgb(37,99,235));
+      // the stale spinner frame has a light grey background (#fafafa = rgb(250,250,250)).
+      // This is a deterministic content check, not a fragile size heuristic.
+      const pixel = await page.evaluate(async (b64: string) => {
+        const img = new Image();
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = reject;
+          img.src = `data:image/png;base64,${b64}`;
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0);
+        const [r, g, b] = ctx.getImageData(100, 30, 1, 1).data;
+        return { r, g, b };
+      }, screenshotBase64);
+
+      // The header's blue channel should dominate — spinner frame would show ~250 for all channels
+      expect(pixel.b).toBeGreaterThan(200); // blue header: b=235
+      expect(pixel.r).toBeLessThan(100);    // blue header: r=37, spinner: r=250
     });
   });
 

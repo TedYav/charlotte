@@ -1,6 +1,6 @@
 {
   "name": "@ticktockbent/charlotte",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Token-efficient browser MCP server — structured web pages for AI agents, not raw accessibility dumps",
   "type": "module",
   "main": "dist/index.js",
@@ -75,7 +75,7 @@
     "CHANGELOG.md"
   ],
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=20.0.0"
   },
   "mcpName": "io.github.TickTockBent/charlotte",
   "publishConfig": {

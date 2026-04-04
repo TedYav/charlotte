@@ -39,6 +39,35 @@ export interface ToolDependencies {
   devModeState?: DevModeState;
 }
 
+/**
+ * Ensure the browser is connected and at least one tab is open.
+ * Called at the start of every tool handler to support lazy initialization —
+ * Chromium is not launched until the first tool call.
+ *
+ * Uses a module-level mutex to prevent concurrent tool calls from racing
+ * to open duplicate initial tabs (common with Claude Desktop which fires
+ * multiple tool calls simultaneously at startup).
+ */
+let initializing: Promise<void> | null = null;
+
+export async function ensureReady(deps: Pick<ToolDependencies, "browserManager" | "pageManager">): Promise<void> {
+  await deps.browserManager.ensureConnected();
+  if (deps.pageManager.hasPages()) return;
+
+  // Prevent concurrent openTab() calls during first initialization
+  if (initializing) {
+    await initializing;
+    return;
+  }
+
+  initializing = deps.pageManager.openTab(deps.browserManager).then(() => {});
+  try {
+    await initializing;
+  } finally {
+    initializing = null;
+  }
+}
+
 export interface RenderOptions {
   detail?: DetailLevel;
   selector?: string;
@@ -75,7 +104,7 @@ export async function renderActivePage(
   // JS-dependent CDP calls will hang. Return a stub with dialog info.
   const pendingDialogInfo = deps.pageManager.getPendingDialogInfo();
   if (pendingDialogInfo) {
-    const viewport = page.viewport() ?? { width: 1280, height: 720 };
+    const viewport = page.viewport() ?? deps.config.defaultViewport;
     return {
       url: page.url(),
       title: "(dialog blocking)",
@@ -170,7 +199,7 @@ export async function resolveElement(
 
   const suggestion = similar
     ? `Element '${elementId}' not found. Did you mean '${similar.id}' (${similar.type}: "${similar.label}")?`
-    : `Element '${elementId}' not found. Call charlotte:observe to get current page state.`;
+    : `Element '${elementId}' not found. Call charlotte_observe to get current page state.`;
 
   throw new CharlotteError(
     CharlotteErrorCode.ELEMENT_NOT_FOUND,
@@ -208,6 +237,9 @@ export async function getSessionForElement(
  * state, and computes a structural diff between them.
  */
 export async function renderAfterAction(deps: ToolDependencies): Promise<PageRepresentation> {
+  const page = deps.pageManager.getActivePage();
+  await waitForCompositorFrame(page);
+
   const preActionSnapshot = deps.snapshotStore.getLatest();
 
   const representation = await renderActivePage(deps, { source: "action" });
@@ -413,6 +445,65 @@ export async function resolveOutputPath(
   }
 
   return realResolved;
+}
+
+/**
+ * Wait for the browser compositor to produce a fresh frame.
+ *
+ * Puppeteer's page.screenshot() can capture stale compositor frames on SPAs
+ * where the initial paint (e.g. a loading spinner) is replaced by framework-
+ * rendered content via DOM mutations. The compositor doesn't automatically
+ * flush its frame cache after JS-driven DOM updates.
+ *
+ * Double-rAF ensures:
+ *   1st rAF: browser processes pending style/layout changes
+ *   2nd rAF: compositor produces a new frame with those changes
+ *
+ * After the rAF resolves, a synchronous layout flush (reading offsetHeight)
+ * forces the browser to complete any pending layout work, pushing changes
+ * closer to the compositor surface.
+ *
+ * Fails silently if the page has no JS execution context (e.g. crashed tab,
+ * about:blank, PDF) — in that case the screenshot proceeds without the flush,
+ * which is the pre-fix behavior.
+ */
+export async function waitForCompositorFrame(page: Page): Promise<void> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    let rafResolved = false;
+    const rafFlush = page.evaluate(() => {
+      return new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => resolve());
+        });
+      });
+    }).then(() => { rafResolved = true; });
+    // Prevent unhandled rejection if the page navigates or the timeout wins the race.
+    rafFlush.catch(() => {});
+
+    const timeout = new Promise<void>((resolve) => {
+      timeoutId = setTimeout(resolve, 1000);
+    });
+
+    await Promise.race([rafFlush, timeout]);
+
+    if (!rafResolved) {
+      logger.warn("waitForCompositorFrame: rAF flush timed out after 1s, proceeding with possibly stale frame");
+    }
+  } catch {
+    // No JS context available — proceed without compositor flush.
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  // Force a synchronous layout flush to ensure pending DOM changes are
+  // fully processed. This reads offsetHeight which triggers layout
+  // computation, pushing changes toward the compositor surface.
+  try {
+    await page.evaluate(() => { void document.body.offsetHeight; });
+  } catch {
+    // Silent — same degradation as above.
+  }
 }
 
 /**

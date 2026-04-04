@@ -34,7 +34,7 @@ export async function clickElementByBackendNodeId(
       throw new CharlotteError(
         CharlotteErrorCode.ELEMENT_NOT_FOUND,
         "Element has no visible box model — it may be hidden or zero-sized.",
-        "Call charlotte:observe to check the element's state.",
+        "Call charlotte_observe to check the element's state.",
       );
     }
 
@@ -128,7 +128,7 @@ export async function waitForPossibleNavigation(
 
   if (dialogDetected) {
     // Dialog is blocking the action. Don't await actionPromise — it will
-    // resolve later when the dialog is handled via charlotte:dialog.
+    // resolve later when the dialog is handled via charlotte_dialog.
     // Guard against unhandled rejection from the fire-and-forget promise.
     actionPromise.catch(() => {
       logger.debug("Post-dialog action promise rejected (expected)");
@@ -219,7 +219,7 @@ async function getElementCenter(
       throw new CharlotteError(
         CharlotteErrorCode.ELEMENT_NOT_FOUND,
         "Element has no visible box model — it may be hidden or zero-sized.",
-        "Call charlotte:observe to check the element's state.",
+        "Call charlotte_observe to check the element's state.",
       );
     }
 
@@ -275,6 +275,7 @@ export async function typeIntoElement(
   text: string,
   clearFirst: boolean,
   pressEnter: boolean,
+  characterDelay?: number,
 ): Promise<void> {
   // Focus the element
   await focusElementByBackendNodeId(page, backendNodeId);
@@ -287,8 +288,9 @@ export async function typeIntoElement(
     await page.keyboard.press("Backspace");
   }
 
-  // Type the text character by character
-  await page.keyboard.type(text);
+  // Type the text — with optional per-character delay for sites with
+  // key-by-key event handlers (autocomplete, search-as-you-type, etc.)
+  await page.keyboard.type(text, characterDelay ? { delay: characterDelay } : undefined);
 
   if (pressEnter) {
     await page.keyboard.press("Enter");
@@ -392,7 +394,7 @@ export async function setFileInputFiles(
       throw new CharlotteError(
         CharlotteErrorCode.SESSION_ERROR,
         "Element is not a file input.",
-        "Use charlotte:find to locate file_input elements.",
+        "Use charlotte_find to locate file_input elements.",
       );
     }
     await cdpSession.send("DOM.setFileInputFiles", {

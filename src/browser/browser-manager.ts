@@ -1,24 +1,36 @@
 import puppeteer, { type Browser, type Page, type LaunchOptions } from "puppeteer";
 import { logger } from "../utils/logger.js";
 import { CharlotteError, CharlotteErrorCode } from "../types/errors.js";
+import { createDefaultConfig } from "../types/config.js";
+import type { CharlotteConfig } from "../types/config.js";
 
 export class BrowserManager {
   private browser: Browser | null = null;
   private launchOptions: LaunchOptions = {};
   private launching: Promise<void> | null = null;
+  private config: CharlotteConfig;
 
-  async launch(options?: LaunchOptions): Promise<void> {
+  constructor(config?: CharlotteConfig, launchOptions?: LaunchOptions) {
+    // Accept optional config; callers without config get a permissive default
+    this.config = config ?? createDefaultConfig();
+    // Set launch defaults once — ensureConnected() and launch() both use these.
     this.launchOptions = {
       headless: true,
+      defaultViewport: this.config.defaultViewport,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-gpu",
         "--disable-dev-shm-usage",
       ],
-      ...options,
+      ...launchOptions,
     };
+  }
 
+  async launch(options?: LaunchOptions): Promise<void> {
+    if (options) {
+      this.launchOptions = { ...this.launchOptions, ...options };
+    }
     await this.doLaunch();
   }
 

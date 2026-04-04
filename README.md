@@ -18,7 +18,7 @@ Charlotte decomposes each page into a typed, structured representation — landm
 
 ### Benchmarks
 
-Charlotte v0.5.1 vs Playwright MCP, measured by characters returned per tool call on real websites:
+Charlotte v0.6.0 vs Playwright MCP, measured by characters returned per tool call on real websites:
 
 **Navigation** (first contact with a page):
 
@@ -35,11 +35,11 @@ Charlotte's `navigate` returns minimal detail by default — landmarks, headings
 
 | Profile | Tools | Def. tokens/call | Savings vs full |
 |:---|---:|---:|---:|
-| full | 42 | ~7,400 | — |
-| browse (default) | 23 | ~3,900 | **~47%** |
-| core | 7 | 1,677 | **~77%** |
+| full | 43 | ~7,600 | — |
+| browse (default) | 23 | ~3,900 | **~49%** |
+| core | 7 | 1,677 | **~78%** |
 
-Tool definitions are sent on every API round-trip. With the default `browse` profile, Charlotte carries ~47% less definition overhead than loading all tools. Over a 20-call browsing session, that's **~38% fewer total tokens**. See the [profile benchmark report](docs/charlotte-profile-benchmark-report.md) for full results.
+Tool definitions are sent on every API round-trip. With the default `browse` profile, Charlotte carries ~49% less definition overhead than loading all tools. Over a 20-call browsing session, that's **~40% fewer total tokens**. See the [profile benchmark report](docs/charlotte-profile-benchmark-report.md) for full results.
 
 **The workflow difference:** Playwright agents receive 61K+ characters every time they look at Hacker News, whether they're reading headlines or looking for a login button. Charlotte agents get 336 characters on arrival, call `find({ type: "link", text: "login" })` to get exactly what they need, and never pay for the rest.
 
@@ -71,7 +71,7 @@ Agents receive landmarks, headings, interactive elements with typed metadata, bo
 
 **Observation** — `observe` (3 detail levels, structural tree view), `find` (spatial + semantic search, CSS selector mode), `screenshot` (with persistent artifact management), `screenshots`, `screenshot_get`, `screenshot_delete`, `diff` (structural comparison against snapshots)
 
-**Interaction** — `click`, `click_at` (coordinate-based), `type`, `select`, `toggle`, `submit`, `scroll`, `hover`, `drag`, `key` (single/sequence with element targeting), `wait_for` (async condition polling), `upload` (file input), `dialog` (accept/dismiss JS dialogs)
+**Interaction** — `click`, `click_at` (coordinate-based), `type` (with slow typing support), `select`, `toggle`, `submit`, `scroll`, `hover`, `drag`, `key` (single/sequence with element targeting), `wait_for` (async condition polling), `upload` (file input), `fill_form` (batch form fill), `dialog` (accept/dismiss JS dialogs)
 
 **Monitoring** — `console` (all severity levels, filtering, timestamps), `requests` (full HTTP history, method/status/resource type filtering)
 
@@ -83,30 +83,30 @@ Agents receive landmarks, headings, interactive elements with typed metadata, bo
 
 ## Tool Profiles
 
-Charlotte ships 42 tools (41 registered + the `charlotte:tools` meta-tool), but most workflows only need a subset. Startup profiles control which tools load into the agent's context, reducing definition overhead by up to 77%.
+Charlotte ships 43 tools (42 registered + the `charlotte_tools` meta-tool), but most workflows only need a subset. Startup profiles control which tools load into the agent's context, reducing definition overhead by up to 78%.
 
 ```bash
 charlotte --profile browse    # 23 tools (default) — navigate, observe, interact, tabs
 charlotte --profile core      # 7 tools — navigate, observe, find, click, type, submit
-charlotte --profile full      # 42 tools — everything
-charlotte --profile interact  # 30 tools — full interaction + dialog + evaluate
-charlotte --profile develop   # 33 tools — interact + dev_serve, dev_inject, dev_audit
+charlotte --profile full      # 43 tools — everything
+charlotte --profile interact  # 31 tools — full interaction + dialog + evaluate
+charlotte --profile develop   # 34 tools — interact + dev_serve, dev_inject, dev_audit
 charlotte --profile audit     # 14 tools — navigation + observation + dev_audit + viewport
 ```
 
 Agents can activate more tools mid-session without restarting:
 
 ```
-charlotte:tools enable dev_mode    → activates dev_serve, dev_audit, dev_inject
-charlotte:tools disable dev_mode   → deactivates them
-charlotte:tools list               → see what's loaded
+charlotte_tools enable dev_mode    → activates dev_serve, dev_audit, dev_inject
+charlotte_tools disable dev_mode   → deactivates them
+charlotte_tools list               → see what's loaded
 ```
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js >= 22
+- Node.js >= 20
 - npm
 
 ### Installation
@@ -443,17 +443,9 @@ Five pages cover navigation, forms, interactive elements, popups, delayed conten
 
 ## Known Issues
 
-**Tool naming convention** — Charlotte uses `:` as a namespace separator in tool names (e.g., `charlotte:navigate`, `charlotte:observe`). MCP SDK v1.26.0+ logs validation warnings for this character, as the emerging [SEP standard](https://github.com/modelcontextprotocol/modelcontextprotocol/issues/986) restricts tool names to `[A-Za-z0-9_.-]`. This does not affect functionality — all tools work correctly — but produces stderr warnings on server startup. Will be addressed in a future release to comply with the SEP standard.
-
 **Shadow DOM** — Open shadow DOM works transparently. Chromium's accessibility tree pierces open shadow boundaries, so web components (e.g., GitHub's `<relative-time>`, `<tool-tip>`) render their content into Charlotte's representation without special handling. Closed shadow roots are opaque to the accessibility tree and will not be captured.
 
 ## Roadmap
-
-### Interaction Gaps
-
-**Batch Form Fill** — Add a `charlotte:fill_form` tool that accepts an array of `{element_id, value}` pairs and fills an entire form in a single tool call, reducing N sequential `type`/`select`/`toggle` calls to one.
-
-**Slow Typing** — Add a `slowly` or `character_delay` parameter to `charlotte:type` for character-by-character input. Required for sites with key-by-key event handlers (autocomplete, search-as-you-type, input validation).
 
 ### Session & Configuration
 
@@ -463,7 +455,7 @@ Five pages cover navigation, forms, interactive elements, popups, delayed conten
 
 **Configuration File** — Support a `--config` CLI argument to load settings from a JSON file, simplifying repeatable setups and CI/CD integration.
 
-**Full Device Emulation** — Extend `charlotte:viewport` to accept named devices (e.g., "iPhone 15") and configure user agent, touch support, and device pixel ratio via CDP, not just viewport dimensions.
+**Full Device Emulation** — Extend `charlotte_viewport` to accept named devices (e.g., "iPhone 15") and configure user agent, touch support, and device pixel ratio via CDP, not just viewport dimensions.
 
 ### Feature Roadmap
 
